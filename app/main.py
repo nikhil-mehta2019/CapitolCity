@@ -1,5 +1,11 @@
 from fastapi import FastAPI
-from .hubspot import get_deal, search_deals_by_sales_rep
+from app.hubspot import (
+    get_deal,
+    search_deals_by_sales_rep,
+    get_pinned_note_for_deal,
+    get_all_notes,
+    get_note_body_by_id
+)
 
 app = FastAPI(title="HubSpot Middleware API")
 
@@ -73,7 +79,12 @@ async def dashboard_summary(sales_rep: str):
 @app.get("/api/deal/{deal_id}")
 async def fetch_deal(deal_id: str):
     deal = await get_deal(deal_id)
-    return deal
+    pinned_note = await get_pinned_note_for_deal(deal_id)
+
+    return {
+        "deal": deal,
+        "pinned_note": pinned_note
+    }
 
 # ------------------------------------------------
 # API: Get Deals by Sales Rep AND Permit Stage
@@ -97,3 +108,20 @@ async def get_deals_by_stage(sales_rep: str, permit_stage: str):
             filtered.append(d)
 
     return filtered
+
+
+@app.get("/api/notes")
+async def fetch_all_notes(limit: int = 100, after: str | None = None):
+    """
+    Fetch all notes in the HubSpot account (paginated).
+    Note: This is account-wide, not deal-specific.
+    """
+    return await get_all_notes(limit, after)
+
+@app.get("/api/notes/{note_id}")
+async def fetch_note_body(note_id: str):
+    """
+    Fetch a single note by note ID.
+    Note body availability depends on HubSpot portal configuration.
+    """
+    return await get_note_body_by_id(note_id)
