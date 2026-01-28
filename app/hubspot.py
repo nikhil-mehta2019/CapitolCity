@@ -172,3 +172,53 @@ async def get_note_body_by_id(note_id: str):
         note_body = data.get("properties", {}).get("hs_note_body")
         
         return note_body
+
+# ------------------------------------------------
+# Permit Stage Normalization (NEW)
+# ------------------------------------------------
+PERMIT_STAGE_MAP = {
+    "intake": "Intake",
+    "pre submittal": "Pre-Submittal",
+    "pre-submittal": "Pre-Submittal",
+    "pre_submittal": "Pre-Submittal",
+    "submittal": "Submittal",
+    "submitted": "Submittal",
+    "issued": "Issued"
+}
+
+def normalize_permit_stage(stage: str | None):
+    if not stage:
+        return "Unknown"
+    key = stage.strip().lower()
+    return PERMIT_STAGE_MAP.get(key, stage)
+
+ # ------------------------------------------------
+ # NEW: Get Permit Stage per Deal (by Sales Rep)
+ # ------------------------------------------------
+async def get_permit_stages_by_sales_rep(sales_rep: str):
+    deals = await search_deals_by_sales_rep(sales_rep)
+
+    return [
+        {
+            "deal_id": d.get("id"),
+            "permit_stage": normalize_permit_stage(
+                d.get("permit_stage") or d.get("properties", {}).get("permit_stage")
+            )
+        }
+        for d in deals
+    ]
+ # ------------------------------------------------
+ # NEW: Get distinct normalized permit stages
+ # ------------------------------------------------
+async def get_distinct_permit_stages(sales_rep: str):
+    deals = await search_deals_by_sales_rep(sales_rep)
+
+    stages = set()
+    for d in deals:
+        stage = normalize_permit_stage(
+            d.get("permit_stage") or d.get("properties", {}).get("permit_stage")
+        )
+        if stage:
+            stages.add(stage)
+
+    return sorted(stages)

@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from app.hubspot import (
     get_deal,
+    get_distinct_permit_stages,
     search_deals_by_sales_rep,
     get_pinned_note_for_deal,
     get_all_notes,
-    get_note_body_by_id
+    get_note_body_by_id,
+    get_permit_stages_by_sales_rep
 )
 
 app = FastAPI(title="HubSpot Middleware API")
@@ -110,18 +112,44 @@ async def get_deals_by_stage(sales_rep: str, permit_stage: str):
     return filtered
 
 
+# ------------------------------------------------
+# Fetch All Notes (Account-wide) API
+# ------------------------------------------------
+# Purpose:
+# - Retrieve notes from the HubSpot account with pagination support
+# - Primarily used for debugging, validation, or internal review
+# - Not intended for direct use in the permit dashboard UI
+#
+# Important:
+# - This API fetches notes across the entire HubSpot account
+# - Results are not filtered by Deal or Sales Rep
+# - Access depends on permissions of the HubSpot Private App token
+# ------------------------------------------------
+
 @app.get("/api/notes")
 async def fetch_all_notes(limit: int = 100, after: str | None = None):
-    """
-    Fetch all notes in the HubSpot account (paginated).
-    Note: This is account-wide, not deal-specific.
-    """
     return await get_all_notes(limit, after)
 
+
+# ------------------------------------------------
+# API: Fetch Note Body by Note ID
+# ------------------------------------------------
+# Purpose:
+# - Retrieve the content (body) of a single HubSpot note using its Note ID
+# - Used to display pinned or linked notes in the permit detail view
+# - This API is read-only and does not modify HubSpot data
+#
+# Important:
+# - Note body availability depends on HubSpot portal configuration
+# - Access is limited to notes readable by the Private App token
+# ------------------------------------------------
 @app.get("/api/notes/{note_id}")
 async def fetch_note_body(note_id: str):
-    """
-    Fetch a single note by note ID.
-    Note body availability depends on HubSpot portal configuration.
-    """
     return await get_note_body_by_id(note_id)
+
+# ------------------------------------------------
+# Distinct Permit Stages (for UI filters)
+# ------------------------------------------------
+@app.get("/api/deals/{sales_rep}/permit-stages/distinct")
+async def distinct_permit_stages(sales_rep: str):
+    return await get_distinct_permit_stages(sales_rep)
