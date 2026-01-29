@@ -60,10 +60,13 @@ async def search_deals_by_sales_rep(sales_rep: str):
         ],
         "properties": [
             "dealname",
-            "permit_stage",
-            "jurisdiction",
+            "dealstage",
             "project_address",
-            "dependency"
+            "juridstiction",     # ✅ must be here
+            "dependency",
+            "permit_number",
+            "submittal_portal",
+            "hs_lastmodifieddate"
         ],
         "limit": 100
     }
@@ -174,22 +177,34 @@ async def get_note_body_by_id(note_id: str):
         return note_body
 
 # ------------------------------------------------
-# Permit Stage Normalization (NEW)
+# Mapped from HubSpot Internal Names to Dashboard Categories: "Pre-Submittal", "Post-Submittal", "Completed"
 # ------------------------------------------------
 PERMIT_STAGE_MAP = {
-    "intake": "Intake",
-    "pre submittal": "Pre-Submittal",
-    "pre-submittal": "Pre-Submittal",
-    "pre_submittal": "Pre-Submittal",
-    "submittal": "Submittal",
-    "submitted": "Submittal",
-    "issued": "Issued"
+    # Internal Name (from API)      : Display Name (from HubSpot UI)
+    
+    # --- Pre-Submittal Group ---
+    "2909556468": "Fee Estimate (Permit Pipeline)",
+    "appointmentscheduled": "Intake (Permit Pipeline)",
+    "qualifiedtobuy": "Pre-Submittal (Permit Pipeline)",
+    
+    # --- Post-Submittal Group ---
+    "presentationscheduled": "Submittal (Permit Pipeline)",
+    
+    # --- Completed Group ---
+    "decisionmakerboughtin": "Approved (Permit Pipeline)",
+    "contractsent": "Closed (Permit Pipeline)",
+    
+    # --- Other ---
+    "closedlost": "Closed Lost (Permit Pipeline)"
 }
 
 def normalize_permit_stage(stage: str | None):
     if not stage:
         return "Unknown"
-    key = stage.strip().lower()
+    # Strip whitespace and convert to string just in case
+    key = str(stage).strip().lower()
+    
+    # Return mapped value, or default to the raw key if not found
     return PERMIT_STAGE_MAP.get(key, stage)
 
  # ------------------------------------------------

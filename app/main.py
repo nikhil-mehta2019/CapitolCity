@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from app.hubspot import (
     get_deal,
@@ -9,6 +10,8 @@ from app.hubspot import (
     get_permit_stages_by_sales_rep,
     normalize_permit_stage
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HubSpot Middleware API")
 
@@ -74,39 +77,62 @@ async def dashboard_summary(sales_rep: str):
 
     for d in deals:
         props = d.get("properties", {})
+        logger.info(f"Deal {d.get('id')} properties keys: {list(props.keys())}")
         stage = normalize_permit_stage(
-            props.get("permit_stage") or d.get("permit_stage")
+            props.get("dealstage") or d.get("dealstage")
         )
 
         # ---------------- KPI COUNTS ----------------
-        if stage == "Pre-Submittal":
+        # Check for substrings to group the stages
+        
+        # Group 1: Pre-Submittal (Fee Estimate, Intake, Pre-Submittal)
+        if any(x in stage for x in ["Fee Estimate", "Intake", "Pre-Submittal"]):
             summary["pre_submittal"] += 1
-        elif stage == "Post-Submittal":
+            
+            # Add to alerts if needed
+            alerts["pre_submittal"].append({
+                "deal_id": d.get("id"),
+                "project_name": props.get("dealname"),
+                "date": props.get("hs_lastmodifieddate"),
+                "description": props.get("description", "")
+            })
+
+        # Group 2: Post-Submittal (Submittal)
+        elif "Submittal" in stage:
             summary["post_submittal"] += 1
-        elif stage == "Issued" or stage == "Completed":
+            
+            alerts["post_submittal"].append({
+                "deal_id": d.get("id"),
+                "project_name": props.get("dealname"),
+                "date": props.get("hs_lastmodifieddate"),
+                "description": props.get("description", "")
+            })
+
+        # Group 3: Completed (Approved, Closed)
+        elif any(x in stage for x in ["Approved", "Closed", "Issued"]):
             summary["completed"] += 1
 
-        # ---------------- ALERT CARDS ----------------
-        alert_item = {
-            "deal_id": d.get("id"),
-            "project_name": props.get("dealname"),
-            "date": props.get("hs_lastmodifieddate"),
-            "description": props.get("description", "")
-        }
+        # # ---------------- ALERT CARDS ----------------
+        # alert_item = {
+        #     "deal_id": d.get("id"),
+        #     "project_name": props.get("dealname"),
+        #     "date": props.get("hs_lastmodifieddate"),
+        #     "description": props.get("description", "")
+        # }
 
-        if stage == "Pre-Submittal":
-            alerts["pre_submittal"].append(alert_item)
+        # if stage == "Pre-Submittal":
+        #     alerts["pre_submittal"].append(alert_item)
 
-        if stage == "Post-Submittal":
-            alerts["post_submittal"].append(alert_item)
+        # if stage == "Post-Submittal":
+        #     alerts["post_submittal"].append(alert_item)
 
         # ---------------- TABLE ROW ----------------
         permits.append({
             "deal_id": d.get("id"),
-            "customer": props.get("dealname"),
+            "deal_name": props.get("dealname"),
             "stage": stage,
             "address": props.get("project_address"),
-            "jurisdiction": props.get("jurisdiction"),
+            "jurisdiction": props.get("juridstiction"),
             "dependency": props.get("dependency")
         })
 
