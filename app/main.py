@@ -6,7 +6,8 @@ from app.hubspot import (
     get_pinned_note_for_deal,
     get_all_notes,
     get_note_body_by_id,
-    get_permit_stages_by_sales_rep
+    get_permit_stages_by_sales_rep,
+    normalize_permit_stage
 )
 
 app = FastAPI(title="HubSpot Middleware API")
@@ -58,12 +59,62 @@ async def get_deals_for_rep(sales_rep: str):
 async def dashboard_summary(sales_rep: str):
     deals = await search_deals_by_sales_rep(sales_rep)
 
-    summary = {}
-    for d in deals:
-        stage = d.get("permit_stage") or "Unknown"
-        summary[stage] = summary.get(stage, 0) + 1
+    summary = {
+        "pre_submittal": 0,
+        "post_submittal": 0,
+        "completed": 0
+    }
 
-    return summary
+    alerts = {
+        "pre_submittal": [],
+        "post_submittal": []
+    }
+
+    permits = []
+
+    for d in deals:
+        props = d.get("properties", {})
+        stage = normalize_permit_stage(
+            props.get("permit_stage") or d.get("permit_stage")
+        )
+
+        # ---------------- KPI COUNTS ----------------
+        if stage == "Pre-Submittal":
+            summary["pre_submittal"] += 1
+        elif stage == "Post-Submittal":
+            summary["post_submittal"] += 1
+        elif stage == "Issued" or stage == "Completed":
+            summary["completed"] += 1
+
+        # ---------------- ALERT CARDS ----------------
+        alert_item = {
+            "deal_id": d.get("id"),
+            "project_name": props.get("dealname"),
+            "date": props.get("hs_lastmodifieddate"),
+            "description": props.get("description", "")
+        }
+
+        if stage == "Pre-Submittal":
+            alerts["pre_submittal"].append(alert_item)
+
+        if stage == "Post-Submittal":
+            alerts["post_submittal"].append(alert_item)
+
+        # ---------------- TABLE ROW ----------------
+        permits.append({
+            "deal_id": d.get("id"),
+            "customer": props.get("dealname"),
+            "stage": stage,
+            "address": props.get("project_address"),
+            "jurisdiction": props.get("jurisdiction"),
+            "dependency": props.get("dependency")
+        })
+
+    return {
+        "summary": summary,
+        "alerts": alerts,
+        "permits": permits
+    }
 
 
 # ------------------------------------------------
