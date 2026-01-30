@@ -62,7 +62,7 @@ async def search_deals_by_sales_rep(sales_rep: str):
             "dealname",
             "dealstage",
             "project_address",
-            "juridstiction",     # Keep this typo as discussed
+            "juridstiction",     # Keep this typo as in HubSpot
             "dependency",
             "permit_number",
             "submittal_portal",
@@ -238,3 +238,33 @@ async def get_distinct_permit_stages(sales_rep: str):
             stages.add(stage)
 
     return sorted(stages)
+# ------------------------------------------------
+# NEW: Get HubSpot Owner Name by Email
+# ------------------------------------------------
+async def get_sales_rep_name_by_email(email: str):
+    # 1. Fetch all owners from HubSpot
+    url = f"{BASE_URL}/crm/v3/owners"
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+    
+    # 2. Search for the email (Case Insensitive)
+    results = data.get("results", [])
+    search_email = email.strip().lower()
+
+    for owner in results:
+        owner_email = owner.get("email", "").strip().lower()
+        
+        if owner_email == search_email:
+            # Found a match! Combine First + Last Name
+            first = owner.get("firstName", "")
+            last = owner.get("lastName", "")
+            full_name = f"{first} {last}".strip()
+            
+            logger.info(f"Mapped Email '{email}' -> Sales Rep '{full_name}'")
+            return full_name
+            
+    logger.warning(f"No HubSpot Owner found for email: {email}")
+    return None

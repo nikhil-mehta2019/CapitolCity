@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.hubspot import (
     get_deal,
     get_distinct_permit_stages,
+    get_sales_rep_name_by_email,
     search_deals_by_sales_rep,
     get_pinned_note_for_deal,
     get_all_notes,
@@ -230,3 +231,26 @@ async def fetch_note_body(note_id: str):
 @app.get("/api/deals/{sales_rep}/permit-stages/distinct")
 async def distinct_permit_stages(sales_rep: str):
     return await get_distinct_permit_stages(sales_rep)
+
+# ------------------------------------------------
+# NEW: Dashboard by Email (For Wix Integration)
+# ------------------------------------------------
+@app.get("/api/dashboard/email/{user_email}")
+async def dashboard_summary_by_email(user_email: str):
+    logger.info(f"Resolving sales rep for email: {user_email}")
+
+    # 1. Resolve Email -> Sales Rep Name
+    sales_rep_name = await get_sales_rep_name_by_email(user_email)
+
+    if not sales_rep_name:
+        return {
+            "error": "User not linked", 
+            "message": f"No HubSpot Sales Rep found with email {user_email}",
+            "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
+            "alerts": {"pre_submittal": [], "post_submittal": []},
+            "permits": []
+        }
+
+    # 2. Reuse the existing dashboard logic
+    logger.info(f"Fetching dashboard for resolved name: {sales_rep_name}")
+    return await dashboard_summary(sales_rep_name)
