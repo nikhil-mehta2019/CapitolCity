@@ -62,11 +62,12 @@ async def search_deals_by_sales_rep(sales_rep: str):
             "dealname",
             "dealstage",
             "project_address",
-            "juridstiction",     # ✅ must be here
+            "juridstiction",     # Keep this typo as discussed
             "dependency",
             "permit_number",
             "submittal_portal",
-            "hs_lastmodifieddate"
+            "hs_lastmodifieddate",
+            "description"
         ],
         "limit": 100
     }
