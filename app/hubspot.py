@@ -24,9 +24,23 @@ async def get_deal(deal_id: str):
         "properties": [
             "dealname",
             "permit_stage",
-            "jurisdiction",
+            "juridstiction",
             "project_address",
             "dependency",
+            # --- New Fields for Detail View ---
+            "general_contractor",      # Verify this internal name in HubSpot
+            "finnace",                 # Verify this internal name
+            "kickoff_invoice_status",  # Verify this internal name
+            "project_start_date",      # Verify this internal name ask clinet exact which property to map
+            
+            # --- Document Fields ---
+            "floor_plan",              # Verify this internal name
+            "pier_plan",               # Verify this internal name
+            "chasis_plan",             # Verify this internal name
+            "elevations",              # Verify this internal name
+            "sprinkler_plan",          # Verify this internal name
+            "pending_articles",        # Verify this internal name
+            
             "sales_rep"
         ]
     }

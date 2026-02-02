@@ -158,12 +158,37 @@ async def dashboard_summary(sales_rep: str):
 
 @app.get("/api/deal/{deal_id}")
 async def fetch_deal(deal_id: str):
-    deal = await get_deal(deal_id)
+    # 1. Fetch raw data from HubSpot
+    deal_raw = await get_deal(deal_id)
+    props = deal_raw.get("properties", {})
+
+    # 2. Fetch the pinned note
     pinned_note = await get_pinned_note_for_deal(deal_id)
+    
 
     return {
-        "deal": deal,
-        "pinned_note": pinned_note
+        "info": {
+            "deal_name": props.get("dealname") or "Unnamed Deal",
+            "address": props.get("project_address") or " ",
+            "jurisdiction": props.get("juridstiction") or " ",
+            "general_contractor": props.get("general_contractor") or " ",
+            "finance": props.get("finnace") or " ",
+            "kick_off_invoice": props.get("kickoff_invoice_status") or " ",
+            "start_date": props.get("project_start_date") or " ", 
+            "dependency": props.get("dependency") or " "
+        },
+        "documents": {
+            # Default to "Pending" if the link is missing
+            "floor_plan": props.get("floor_plan") or "Pending",
+            "pier_plan": props.get("pier_plan") or "Pending",
+            "chasis_plan": props.get("chasis_plan") or "Pending",
+            "elevations": props.get("elevations") or "Pending",
+            "sprinkler_plan": props.get("sprinkler_plan") or "Pending",
+            "pending_articles": props.get("pending_articles") or "None"
+        },
+        "updates": {
+            "pinned_note": pinned_note.get("body") if pinned_note else "No pinned updates."
+        }
     }
 
 # ------------------------------------------------
