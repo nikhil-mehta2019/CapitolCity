@@ -10,7 +10,9 @@ from app.hubspot import (
     get_all_notes,
     get_note_body_by_id,
     get_permit_stages_by_sales_rep,
-    normalize_permit_stage
+    normalize_permit_stage,
+    get_contact_by_email,
+    get_deals_by_contact_id
 )
 
 logger = logging.getLogger(__name__)
@@ -64,85 +66,7 @@ async def get_deals_for_rep(sales_rep: str):
 async def dashboard_summary(sales_rep: str):
     deals = await search_deals_by_sales_rep(sales_rep)
 
-    summary = {
-        "pre_submittal": 0,
-        "post_submittal": 0,
-        "completed": 0
-    }
-
-    alerts = {
-        "pre_submittal": [],
-        "post_submittal": []
-    }
-
-    permits = []
-
-    for d in deals:
-        props = d.get("properties", {})
-        # logger.info(f"Deal {d.get('id')} properties keys: {list(props.keys())}")
-        stage = normalize_permit_stage(
-            props.get("dealstage") or d.get("dealstage")
-        )
-
-        # ---------------- KPI COUNTS ----------------
-        # Check for substrings to group the stages
-        
-        # Group 1: Pre-Submittal (Fee Estimate, Intake, Pre-Submittal)
-        if any(x in stage for x in ["Fee Estimate", "Intake", "Pre-Submittal"]):
-            summary["pre_submittal"] += 1
-            
-            # Add to alerts if needed
-            alerts["pre_submittal"].append({
-                "deal_id": d.get("id"),
-                "project_name": props.get("dealname"),
-                "date": props.get("hs_lastmodifieddate"),
-                "description": props.get("description", "")
-            })
-
-        # Group 2: Post-Submittal (Submittal)
-        elif "Submittal" in stage:
-            summary["post_submittal"] += 1
-            
-            alerts["post_submittal"].append({
-                "deal_id": d.get("id"),
-                "project_name": props.get("dealname"),
-                "date": props.get("hs_lastmodifieddate"),
-                "description": props.get("description", "")
-            })
-
-        # Group 3: Completed (Approved, Closed)
-        elif any(x in stage for x in ["Approved", "Closed", "Issued"]):
-            summary["completed"] += 1
-
-        # # ---------------- ALERT CARDS ----------------
-        # alert_item = {
-        #     "deal_id": d.get("id"),
-        #     "project_name": props.get("dealname"),
-        #     "date": props.get("hs_lastmodifieddate"),
-        #     "description": props.get("description", "")
-        # }
-
-        # if stage == "Pre-Submittal":
-        #     alerts["pre_submittal"].append(alert_item)
-
-        # if stage == "Post-Submittal":
-        #     alerts["post_submittal"].append(alert_item)
-
-        # ---------------- TABLE ROW ----------------
-        permits.append({
-            "deal_id": d.get("id"),
-            "deal_name": props.get("dealname"),
-            "stage": stage,
-            "address": props.get("project_address"),
-            "jurisdiction": props.get("juridstiction"),
-            "dependency": props.get("dependency")
-        })
-
-    return {
-        "summary": summary,
-        "alerts": alerts,
-        "permits": permits
-    }
+    return format_dashboard_response(deals)
 
 
 # ------------------------------------------------
@@ -331,3 +255,104 @@ def format_date(val):
         return " "
     # Slices the first 10 chars: "2026-01-07"
     return str(val)[:10]
+
+# ------------------------------------------------
+# Verify Wix Email against HubSpot Contacts
+# ------------------------------------------------
+# Purpose:
+# - Checks if the email from Wix exists as a Contact in HubSpot
+# - Returns boolean 'match' status
+# ------------------------------------------------
+@app.get("/api/verify-wix-contact/{email}")
+async def verify_wix_contact_email(email: str):
+    # 1. Search HubSpot for the email
+    contact = await get_contact_by_email(email)
+    
+    # 2. Compare / Validate
+    if contact:
+         props = contact.get("properties", {})
+         deals = await search_deals_by_sales_rep(f"{props.get('firstname', '')} {props.get('lastname', '')}".strip())
+
+         return format_dashboard_response(deals)        
+        
+
+def format_dashboard_response(deals):
+    summary = {
+        "pre_submittal": 0,
+        "post_submittal": 0,
+        "completed": 0
+    }
+
+    alerts = {
+        "pre_submittal": [],
+        "post_submittal": []
+    }
+
+    permits = []
+
+    for d in deals:
+        props = d.get("properties", {})
+        # logger.info(f"Deal {d.get('id')} properties keys: {list(props.keys())}")
+        stage = normalize_permit_stage(
+            props.get("dealstage") or d.get("dealstage")
+        )
+
+        # ---------------- KPI COUNTS ----------------
+        # Check for substrings to group the stages
+        
+        # Group 1: Pre-Submittal (Fee Estimate, Intake, Pre-Submittal)
+        if any(x in stage for x in ["Fee Estimate", "Intake", "Pre-Submittal"]):
+            summary["pre_submittal"] += 1
+            
+            # Add to alerts if needed
+            alerts["pre_submittal"].append({
+                "deal_id": d.get("id"),
+                "project_name": props.get("dealname"),
+                "date": props.get("hs_lastmodifieddate"),
+                "description": props.get("description", "")
+            })
+
+        # Group 2: Post-Submittal (Submittal)
+        elif "Submittal" in stage:
+            summary["post_submittal"] += 1
+            
+            alerts["post_submittal"].append({
+                "deal_id": d.get("id"),
+                "project_name": props.get("dealname"),
+                "date": props.get("hs_lastmodifieddate"),
+                "description": props.get("description", "")
+            })
+
+        # Group 3: Completed (Approved, Closed)
+        elif any(x in stage for x in ["Approved", "Closed", "Issued"]):
+            summary["completed"] += 1
+
+        # # ---------------- ALERT CARDS ----------------
+        # alert_item = {
+        #     "deal_id": d.get("id"),
+        #     "project_name": props.get("dealname"),
+        #     "date": props.get("hs_lastmodifieddate"),
+        #     "description": props.get("description", "")
+        # }
+
+        # if stage == "Pre-Submittal":
+        #     alerts["pre_submittal"].append(alert_item)
+
+        # if stage == "Post-Submittal":
+        #     alerts["post_submittal"].append(alert_item)
+
+        # ---------------- TABLE ROW ----------------
+        permits.append({
+            "deal_id": d.get("id"),
+            "deal_name": props.get("dealname"),
+            "stage": stage,
+            "address": props.get("project_address"),
+            "jurisdiction": props.get("juridstiction"),
+            "dependency": props.get("dependency")
+        })
+
+    return {
+        "summary": summary,
+        "alerts": alerts,
+        "permits": permits
+    }

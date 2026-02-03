@@ -263,7 +263,10 @@ async def get_sales_rep_name_by_email(email: str):
         response = await client.get(url, headers=headers)
         response.raise_for_status()
         data = response.json()
-    
+    logger.info(
+            "HubSpot OWNERS response:\n%s",
+            json.dumps(data, indent=2)
+        )
     # 2. Search for the email (Case Insensitive)
     results = data.get("results", [])
     search_email = email.strip().lower()
@@ -282,3 +285,77 @@ async def get_sales_rep_name_by_email(email: str):
             
     logger.warning(f"No HubSpot Owner found for email: {email}")
     return None
+
+    # ------------------------------------------------
+# Search Contact by Email
+# - Used to verify if a Wix user exists as a Contact in HubSpot
+# - More efficient than fetching all contacts
+# ------------------------------------------------
+async def get_contact_by_email(email: str):
+    url = f"{BASE_URL}/crm/v3/objects/contacts/search"
+    
+    payload = {
+        "filterGroups": [
+            {
+                "filters": [
+                    {
+                        "propertyName": "email",
+                        "operator": "EQ",
+                        "value": email
+                    }
+                ]
+            }
+        ],
+        "properties": ["email", "firstname", "lastname"],
+        "limit": 1
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Return the first match or None if no match found
+        results = data.get("results", [])
+        return results[0] if results else None
+    
+    # ------------------------------------------------
+# Get Deals by Contact ID (Association Search)
+# - Used for Wix Users who are matched to a HubSpot Contact
+# - Filters Deals where the associated contact is {contact_id}
+# ------------------------------------------------
+async def get_deals_by_contact_id(contact_id: str):
+    url = f"{BASE_URL}/crm/v3/objects/deals/search"
+
+    payload = {
+        "filterGroups": [
+            {
+                "filters": [
+                    {
+                        "propertyName": "associations.contact",
+                        "operator": "EQ",
+                        "value": contact_id
+                    }
+                ]
+            }
+        ],
+        "properties": [
+            "dealname",
+            "dealstage",
+            "project_address",
+            "juridstiction",
+            "dependency",
+            "permit_number",
+            "submittal_portal",
+            "hs_lastmodifieddate",
+            "description",
+            "amount"
+        ],
+        "limit": 100
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("results", [])
