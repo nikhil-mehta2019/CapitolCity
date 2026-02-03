@@ -133,10 +133,10 @@ async def get_pinned_note_for_deal(deal_id: str):
         search_json = search_resp.json()
 
         # 🔴 LOG RAW SEARCH RESPONSE
-        logger.info(
-            "HubSpot NOTES SEARCH response:\n%s",
-            json.dumps(search_json, indent=2)
-        )
+        # logger.info(
+        #     "HubSpot NOTES SEARCH response:\n%s",
+        #     json.dumps(search_json, indent=2)
+        # )
 
         notes = search_json.get("results", [])
         if not notes:
@@ -152,10 +152,10 @@ async def get_pinned_note_for_deal(deal_id: str):
         detail_json = detail_resp.json()
 
         # 🔴 LOG RAW NOTE DETAIL RESPONSE
-        logger.info(
-            "HubSpot NOTE DETAIL response:\n%s",
-            json.dumps(detail_json, indent=2)
-        )
+        # logger.info(
+        #     "HubSpot NOTE DETAIL response:\n%s",
+        #     json.dumps(detail_json, indent=2)
+        # )
 
     props = detail_json.get("properties", {})
 

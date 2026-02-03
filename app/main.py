@@ -1,3 +1,4 @@
+import json
 import logging
 from fastapi import FastAPI
 from app.hubspot import (
@@ -78,7 +79,7 @@ async def dashboard_summary(sales_rep: str):
 
     for d in deals:
         props = d.get("properties", {})
-        logger.info(f"Deal {d.get('id')} properties keys: {list(props.keys())}")
+        # logger.info(f"Deal {d.get('id')} properties keys: {list(props.keys())}")
         stage = normalize_permit_stage(
             props.get("dealstage") or d.get("dealstage")
         )
@@ -161,29 +162,33 @@ async def fetch_deal(deal_id: str):
     # 1. Fetch raw data from HubSpot
     deal_raw = await get_deal(deal_id)
     props = deal_raw.get("properties", {})
+    logger.info(
+            "HubSpot DETAIL response:\n%s",
+            json.dumps(deal_raw, indent=2)
+        )
 
+    
     # 2. Fetch the pinned note
     pinned_note = await get_pinned_note_for_deal(deal_id)
-    
 
     return {
         "info": {
             "deal_name": props.get("dealname") or "Unnamed Deal",
-            "address": props.get("project_address") or " ",
-            "jurisdiction": props.get("juridstiction") or " ",
-            "general_contractor": props.get("general_contractor") or " ",
-            "finance": props.get("finnace") or " ",
-            "kick_off_invoice": props.get("kickoff_invoice_status") or " ",
-            "start_date": props.get("project_start_date") or " ", 
-            "dependency": props.get("dependency") or " "
+            "address": props.get("project_address") or "NA",
+            "jurisdiction": props.get("juridstiction") or "NA",
+            "general_contractor": props.get("general_contractor") or "NA",
+            "finance": props.get("finnace") or "NA",
+            "kick_off_invoice": format_invoice_status(props.get("kickoff_invoice_status")),
+            "start_date": format_date(props.get("createdate")),
+            "dependency": props.get("dependency") or "NA"
         },
         "documents": {
-            # Default to "Pending" if the link is missing
-            "floor_plan": props.get("floor_plan") or "Pending",
-            "pier_plan": props.get("pier_plan") or "Pending",
-            "chasis_plan": props.get("chasis_plan") or "Pending",
-            "elevations": props.get("elevations") or "Pending",
-            "sprinkler_plan": props.get("sprinkler_plan") or "Pending",
+            # Force the value to a string and strip whitespace
+            "floor_plan": format_standard_doc(props.get("floor_plan")),
+            "pier_plan": format_standard_doc(props.get("pier_plan")),
+            "chassis_plan": format_standard_doc(props.get("chassis_plan")),
+            "elevations": format_standard_doc(props.get("elevations")),
+            "sprinkler_plan": format_standard_doc(props.get("sprinkler_plan")),
             "pending_articles": props.get("pending_articles") or "None"
         },
         "updates": {
@@ -277,5 +282,52 @@ async def dashboard_summary_by_email(user_email: str):
         }
 
     # 2. Reuse the existing dashboard logic
-    logger.info(f"Fetching dashboard for resolved name: {sales_rep_name}")
+    # logger.info(f"Fetching dashboard for resolved name: {sales_rep_name}")
     return await dashboard_summary(sales_rep_name)
+
+def format_invoice_status(val):
+    """
+    Handles: Kick-Off Invoice Status
+    Options based on screenshot: 'Sent', 'Recieved', 'Pending'
+    """
+    if not val:
+        return "Pending"
+        
+    s = str(val).strip()
+    lower_s = s.lower()
+    
+    if lower_s == "sent":
+        return "Sent"
+    if lower_s in ["recieved", "true"]:
+        return "Recieved"
+    if lower_s in ["pending", "false", "none", "--"]:
+        return "Pending"
+        
+    return s
+
+def format_standard_doc(val):
+    """
+    Handles: Floor Plan, Pier Plan, Chassis Plan, Elevations, Sprinkler Plan
+    Options based on screenshots: 'Recieved', 'Pending', 'Not Required', 'Single Wide - Not Required'
+    """
+    if not val:
+        return "Pending"
+    
+    s = str(val).strip()
+    lower_s = s.lower()
+    
+    # Handle boolean/internal quirks
+    if lower_s in ["true", "recieved"]:
+        return "Recieved" # Maintains user's spelling
+    if lower_s in ["false", "none", "--", ""]:
+        return "Pending"
+        
+    # Pass through complex labels like "Single Wide - Not Required"
+    return s
+
+# Helper to extract date only
+def format_date(val):
+    if not val:
+        return " "
+    # Slices the first 10 chars: "2026-01-07"
+    return str(val)[:10]
