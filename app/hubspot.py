@@ -306,7 +306,7 @@ async def get_contact_by_email(email: str):
                 ]
             }
         ],
-        "properties": ["email", "firstname", "lastname", "jobtitle"],
+        "properties": ["email", "firstname", "lastname", "jobtitle","company"],
         "limit": 1
     }
 
