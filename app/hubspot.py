@@ -306,7 +306,7 @@ async def get_contact_by_email(email: str):
                 ]
             }
         ],
-        "properties": ["email", "firstname", "lastname"],
+        "properties": ["email", "firstname", "lastname", "jobtitle"],
         "limit": 1
     }
 
@@ -359,3 +359,207 @@ async def get_deals_by_contact_id(contact_id: str):
         response.raise_for_status()
         data = response.json()
         return data.get("results", [])
+    
+async def get_sales_reps_under_pm(pm_email: str):
+
+    contact = await get_contact_by_email(pm_email)
+
+    if not contact:
+        logger.warning(f"No contact found for {pm_email}")
+        return []
+
+    props = contact.get("properties", {})
+    job_title = (props.get("jobtitle") or "").lower()
+
+    # Validate role
+    if "project manager" not in job_title:
+        logger.warning(f"{pm_email} is not a Project Manager")
+        return []
+
+    pm_name = " ".join([
+        props.get("firstname","").strip(),
+        props.get("lastname","").strip()
+    ]).strip()
+
+    print("Resolved PM Name:", repr(pm_name))
+
+    url = f"{BASE_URL}/crm/v3/objects/contacts/search"
+
+    payload = {
+        "filterGroups": [
+            {
+                "filters": [
+                    {
+                        "propertyName": "project_manager_email",
+                        "operator": "EQ",
+                        "value": pm_name   # ✅ FIX HERE
+                    }
+                ]
+            }
+        ],
+        "properties": [
+            "firstname",
+            "lastname",
+            "email",
+            "jobtitle"
+        ],
+        "limit": 100
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        reps = response.json().get("results", [])
+
+        # To display deal names, you must now iterate through these reps
+        for rep in reps:
+            rep_email = rep.get("properties", {}).get("email")
+            # Call your existing search_deals_by_sales_rep using the rep's name
+            rep_name = f"{rep['properties'].get('firstname','')} {rep['properties'].get('lastname','')}".strip()
+            raw_deals = await search_deals_by_sales_rep(rep_name)
+            rep["deals"] = [format_deal_for_pm_view(d) for d in raw_deals]
+
+        return reps
+
+def format_deal_for_pm_view(deal):
+    """
+    Filters and formats a HubSpot deal object to include only the properties
+    requested for the Project Manager's Sales Rep view.
+    """
+    props = deal.get("properties", {})
+    
+    return {
+        "id": deal.get("id"),
+        "properties": {
+            "createdate": props.get("createdate", "")[:10], # Truncates timestamp to YYYY-MM-DD
+            "dealname": props.get("dealname"),
+            "dealstage": props.get("dealstage"),
+            "juridstiction": props.get("juridstiction"),
+            "permit_number": props.get("permit_number"),
+            "project_address": props.get("project_address"),
+            "submittal_portal": props.get("submittal_portal")
+        }
+    }
+
+# ------------------------------------------------
+# NEW: General Manager (GM) / Company Level Logic
+# ------------------------------------------------
+
+async def get_gm_assigned_company(email: str):
+    """
+    Fetches the GM's contact record to find their assigned Company.
+    Validates GM status by checking if this property exists.
+    """
+    contact = await get_contact_by_email(email)
+    
+    if not contact:
+        logger.warning(f"No HubSpot contact found for GM email: {email}")
+        return None
+
+    props = contact.get("properties", {})
+    
+    # This property on the Contact record tells us which Company they manage.
+    assigned_company = props.get("company") 
+    
+    if not assigned_company:
+        logger.warning(f"Contact {email} has no assigned company value.")
+        return None
+        
+    return assigned_company
+
+
+async def search_deals_by_company(company_name: str):
+    """
+    Fetches ALL deals associated with a specific Company custom property.
+    """
+    url = f"{BASE_URL}/crm/v3/objects/deals/search"
+
+    payload = {
+        "filterGroups": [
+            {
+                "filters": [
+                    {
+                        # 🔴 TODO: REPLACE WITH REAL INTERNAL NAME (e.g. 'associated_company')
+                        # This is the custom property on the DEAL object.
+                        "propertyName": "company", 
+                        "operator": "EQ",
+                        "value": company_name
+                    }
+                ]
+            }
+        ],
+        "properties": [
+            "dealname",
+            "dealstage",
+            "project_address",
+            "juridstiction", # Keep typo if it exists in HubSpot
+            "dependency",
+            "permit_number",
+            "sales_rep",     # CRITICAL: We need this to group by agent
+            "hs_lastmodifieddate",
+            "description"
+        ],
+        "limit": 100
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json().get("results", [])
+
+
+async def get_gm_dashboard_data(company_name: str):
+    """
+    Aggregates company deals into a structure that matches the 'List of Agents' UI.
+    """
+    # 1. Fetch raw deals
+    deals = await search_deals_by_company(company_name)
+
+    # 2. Initialize UI Structure
+    dashboard_data = {
+        "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
+        "agents": {},  # Dictionary for grouping: {"Ayudh": {count: 5, deals: []}}
+        "permits": []  # Flat list for the table
+    }
+
+    # 3. Process & Group
+    for deal in deals:
+        props = deal.get("properties", {})
+        stage = normalize_permit_stage(props.get("dealstage"))
+        
+        # --- A. Summary Counts ---
+        if any(x in stage for x in ["Fee Estimate", "Intake", "Pre-Submittal"]):
+            dashboard_data["summary"]["pre_submittal"] += 1
+        elif "Submittal" in stage:
+            dashboard_data["summary"]["post_submittal"] += 1
+        elif any(x in stage for x in ["Approved", "Closed", "Issued"]):
+            dashboard_data["summary"]["completed"] += 1
+
+        # --- B. Group by Sales Agent ---
+        agent_name = props.get("sales_rep") or "Unassigned"
+        
+        if agent_name not in dashboard_data["agents"]:
+            dashboard_data["agents"][agent_name] = {
+                "name": agent_name, 
+                "count": 0,
+                # We can store deal IDs here if the UI needs a "drill-down" later
+                "deal_ids": [] 
+            }
+        
+        dashboard_data["agents"][agent_name]["count"] += 1
+        dashboard_data["agents"][agent_name]["deal_ids"].append(deal.get("id"))
+
+        # --- C. Table Data ---
+        dashboard_data["permits"].append({
+            "deal_id": deal.get("id"),
+            "deal_name": props.get("dealname"),
+            "stage": stage,
+            "address": props.get("project_address"),
+            "jurisdiction": props.get("juridstiction"),
+            "sales_agent": agent_name  # Needed for the UI dropdown
+        })
+
+    # Convert agents dict to a clean list for JSON
+    dashboard_data["agents"] = list(dashboard_data["agents"].values())
+    
+    return dashboard_data
