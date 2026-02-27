@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import json
 import logging
@@ -13,13 +14,18 @@ headers = {
 }
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+SALES_REP_CACHE = None
 # ------------------------------------------------
 # Get single Deal by Deal ID
 # - Used for Deal detail view
 # - Returns raw HubSpot deal object
 # ------------------------------------------------
 async def get_deal(deal_id: str):
+    print("BASE_URL from config:", BASE_URL)
+    print("Token loaded:", HUBSPOT_TOKEN is not None)
+    print("Token preview:", HUBSPOT_TOKEN[:10] if HUBSPOT_TOKEN else None)
     url = f"{BASE_URL}/crm/v3/objects/deals/{deal_id}"
+    print("Final URL:", url)
     params = {
         "properties": [
             "dealname",
@@ -479,7 +485,6 @@ async def search_deals_by_company(company_name: str):
             {
                 "filters": [
                     {
-                        # 🔴 TODO: REPLACE WITH REAL INTERNAL NAME (e.g. 'associated_company')
                         # This is the custom property on the DEAL object.
                         "propertyName": "company", 
                         "operator": "EQ",
@@ -497,7 +502,7 @@ async def search_deals_by_company(company_name: str):
             "permit_number",
             "sales_rep",     # CRITICAL: We need this to group by agent
             "hs_lastmodifieddate",
-            "description"
+            "description"           
         ],
         "limit": 100
     }
@@ -508,6 +513,49 @@ async def search_deals_by_company(company_name: str):
         return response.json().get("results", [])
 
 
+async def build_sales_rep_map():
+    """
+    Fetch all Contacts where jobtitle = 'Sales Rep'
+    Build a name -> email map
+    Cached in memory to avoid repeated API calls
+    """
+    global SALES_REP_CACHE
+
+    if SALES_REP_CACHE:
+        return SALES_REP_CACHE
+
+    url = f"{BASE_URL}/crm/v3/objects/contacts/search"
+
+    payload = {
+        "filterGroups": [
+            {
+                "filters": [
+                    {
+                        "propertyName": "jobtitle",
+                        "operator": "EQ",
+                        "value": "Sales Rep"
+                    }
+                ]
+            }
+        ],
+        "properties": ["firstname", "lastname", "email"],
+        "limit": 100
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        reps = response.json().get("results", [])
+
+    rep_map = {}
+    for rep in reps:
+        props = rep.get("properties", {})
+        full_name = f"{props.get('firstname','')} {props.get('lastname','')}".strip()
+        rep_map[full_name] = props.get("email")
+
+    SALES_REP_CACHE = rep_map
+    return rep_map
+    
 async def get_gm_dashboard_data(company_name: str):
     """
     Aggregates company deals into a structure that matches the 'List of Agents' UI.
@@ -515,16 +563,21 @@ async def get_gm_dashboard_data(company_name: str):
     # 1. Fetch raw deals
     deals = await search_deals_by_company(company_name)
 
-    # 2. Initialize UI Structure
+    # 2. Build Sales Rep email map (single API call, cached)
+    agent_email_map = await build_sales_rep_map()
+    
+
+    # 3. Initialize UI Structure
     dashboard_data = {
         "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
         "agents": {},  # Dictionary for grouping: {"Ayudh": {count: 5, deals: []}}
         "permits": []  # Flat list for the table
     }
 
-    # 3. Process & Group
+    # 4. Process & Group
     for deal in deals:
         props = deal.get("properties", {})
+        print("props:",props)
         stage = normalize_permit_stage(props.get("dealstage"))
         
         # --- A. Summary Counts ---
@@ -537,15 +590,16 @@ async def get_gm_dashboard_data(company_name: str):
 
         # --- B. Group by Sales Agent ---
         agent_name = props.get("sales_rep") or "Unassigned"
-        
+        agent_email = agent_email_map.get(agent_name, "Unassigned")
         if agent_name not in dashboard_data["agents"]:
             dashboard_data["agents"][agent_name] = {
                 "name": agent_name, 
+                "email":agent_email,
                 "count": 0,
                 # We can store deal IDs here if the UI needs a "drill-down" later
                 "deal_ids": [] 
             }
-        
+        print(dashboard_data["agents"])
         dashboard_data["agents"][agent_name]["count"] += 1
         dashboard_data["agents"][agent_name]["deal_ids"].append(deal.get("id"))
 
