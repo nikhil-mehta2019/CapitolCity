@@ -1,0 +1,54 @@
+name: Deploy to AWS Lightsail
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install lightsailctl
+        run: |
+          curl -O https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl
+          chmod +x lightsailctl
+          sudo mv lightsailctl /usr/local/bin/
+
+      - name: Build Docker Image
+        run: docker build -t hubspot-middleware .
+
+      - name: Push to Lightsail
+        run: |
+          aws lightsail push-container-image \
+            --service-name ${{ secrets.LIGHTSAIL_SERVICE_NAME }} \
+            --label latest \
+            --image hubspot-middleware
+
+      - name: Deploy Container
+        run: |
+          aws lightsail create-container-service-deployment \
+            --service-name ${{ secrets.LIGHTSAIL_SERVICE_NAME }} \
+            --containers '{
+              "${{ secrets.LIGHTSAIL_CONTAINER_NAME }}": {
+                "image": ":${{ secrets.LIGHTSAIL_SERVICE_NAME }}.latest",
+                "ports": {
+                  "8000": "HTTP"
+                }
+              }
+            }' \
+            --public-endpoint '{
+              "containerName": "${{ secrets.LIGHTSAIL_CONTAINER_NAME }}",
+              "containerPort": 8000
+            }'
