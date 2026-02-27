@@ -1,6 +1,9 @@
 import json
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Header, HTTPException, APIRouter
+from jose import jwt, JWTError
+
+from app.config import JWT_SECRET, ALGORITHM
 from app.hubspot import (
     get_deal,
     get_distinct_permit_stages,
@@ -20,7 +23,42 @@ from app.hubspot import (
 
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------
+# JWT Security Middleware
+# ------------------------------------------------
+# Purpose:
+# - Protect all /api routes
+# - Requires Authorization: Bearer <JWT>
+# - Validates signature and expiration
+# ------------------------------------------------
+
+async def verify_jwt(authorization: str = Header(None)):
+    if not JWT_SECRET:
+        raise HTTPException(status_code=500, detail="JWT secret not configured")
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = authorization.split(" ")[1]
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ------------------------------------------------
+# FastAPI App Initialization
+# ------------------------------------------------
+
 app = FastAPI(title="HubSpot Middleware API")
+
+# Protected router for all secured APIs
+api_router = APIRouter(
+    prefix="/api",
+    dependencies=[Depends(verify_jwt)]
+)
 
 # ------------------------------------------------
 # Health Check API
@@ -28,7 +66,7 @@ app = FastAPI(title="HubSpot Middleware API")
 # Purpose:
 # - Verifies that the FastAPI service is running
 # - Used for deployment checks and monitoring
-# - Does not call HubSpot
+# - Does NOT require JWT
 # ------------------------------------------------
 
 @app.get("/")
@@ -43,14 +81,11 @@ def root():
 # - Fetch all permits (Deals) belonging to a specific Sales Rep
 # - Filters HubSpot data where:
 #     {Sales Rep} = sales_rep
-# - This is the foundation API for:
-#   - Permit listing
-#   - Dashboard summary
-#   - Stage-based filtering
-#   - Table views in the portal
+# - Foundation API for dashboard, listings, filtering
+# - JWT Required
 # ------------------------------------------------
 
-@app.get("/api/deals/by-sales-rep/{sales_rep}")
+@api_router.get("/deals/by-sales-rep/{sales_rep}")
 async def get_deals_for_rep(sales_rep: str):
     return await search_deals_by_sales_rep(sales_rep)
 
@@ -60,15 +95,13 @@ async def get_deals_for_rep(sales_rep: str):
 # ------------------------------------------------
 # Purpose:
 # - Builds a summary of permits grouped by Permit Stage
-# - Uses the core Sales Rep API internally
-# - Returns counts for each stage
-# - Powers the dashboard cards view
+# - Powers dashboard cards
+# - JWT Required
 # ------------------------------------------------
 
-@app.get("/api/dashboard/{sales_rep}")
+@api_router.get("/dashboard/{sales_rep}")
 async def dashboard_summary(sales_rep: str):
     deals = await search_deals_by_sales_rep(sales_rep)
-
     return format_dashboard_response(deals)
 
 
@@ -76,26 +109,17 @@ async def dashboard_summary(sales_rep: str):
 # Deal Detail API
 # ------------------------------------------------
 # Purpose:
-# - Fetch a single permit (Deal) directly from HubSpot using Deal ID
-# - Used for:
-#   - Permit detail view
-#   - Debugging and validation
-#   - Support and verification of individual records
-# - Returns raw HubSpot Deal data (can be cleaned later)
+# - Fetch a single permit (Deal) by Deal ID
+# - Returns formatted detail view
+# - Includes pinned note
+# - JWT Required
 # ------------------------------------------------
 
-@app.get("/api/deal/{deal_id}")
+@api_router.get("/deal/{deal_id}")
 async def fetch_deal(deal_id: str):
-    # 1. Fetch raw data from HubSpot
     deal_raw = await get_deal(deal_id)
     props = deal_raw.get("properties", {})
-    logger.info(
-            "HubSpot DETAIL response:\n%s",
-            json.dumps(deal_raw, indent=2)
-        )
 
-    
-    # 2. Fetch the pinned note
     pinned_note = await get_pinned_note_for_deal(deal_id)
 
     return {
@@ -110,7 +134,6 @@ async def fetch_deal(deal_id: str):
             "dependency": props.get("dependency") or "NA"
         },
         "documents": {
-            # Force the value to a string and strip whitespace
             "floor_plan": format_standard_doc(props.get("floor_plan")),
             "pier_plan": format_standard_doc(props.get("pier_plan")),
             "chassis_plan": format_standard_doc(props.get("chassis_plan")),
@@ -123,19 +146,18 @@ async def fetch_deal(deal_id: str):
         }
     }
 
+
 # ------------------------------------------------
 # API: Get Deals by Sales Rep AND Permit Stage
 # ------------------------------------------------
 # Purpose:
-# - Used when user clicks a Permit Stage card on the dashboard
-# - Returns all permits under that stage for the logged-in Sales Rep
 # - Filters HubSpot Deals by:
-#     {Sales Rep} = sales_rep
-#     {Permit Stage} = permit_stage
-# - This powers the stage drill-down list/table in the portal
+#     {Sales Rep} and {Permit Stage}
+# - Used for stage drill-down
+# - JWT Required
 # ------------------------------------------------
 
-@app.get("/api/deals/{sales_rep}/stage/{permit_stage}")
+@api_router.get("/deals/{sales_rep}/stage/{permit_stage}")
 async def get_deals_by_stage(sales_rep: str, permit_stage: str):
     deals = await search_deals_by_sales_rep(sales_rep)
 
@@ -148,243 +170,132 @@ async def get_deals_by_stage(sales_rep: str, permit_stage: str):
 
 
 # ------------------------------------------------
-# Fetch All Notes (Account-wide) API
+# Fetch All Notes API
 # ------------------------------------------------
 # Purpose:
-# - Retrieve notes from the HubSpot account with pagination support
-# - Primarily used for debugging, validation, or internal review
-# - Not intended for direct use in the permit dashboard UI
-#
-# Important:
-# - This API fetches notes across the entire HubSpot account
-# - Results are not filtered by Deal or Sales Rep
-# - Access depends on permissions of the HubSpot Private App token
+# - Retrieve notes from HubSpot account
+# - Used for debugging / validation
+# - JWT Required
 # ------------------------------------------------
 
-@app.get("/api/notes")
+@api_router.get("/notes")
 async def fetch_all_notes(limit: int = 100, after: str | None = None):
     return await get_all_notes(limit, after)
 
 
 # ------------------------------------------------
-# API: Fetch Note Body by Note ID
+# Fetch Note Body API
 # ------------------------------------------------
 # Purpose:
-# - Retrieve the content (body) of a single HubSpot note using its Note ID
-# - Used to display pinned or linked notes in the permit detail view
-# - This API is read-only and does not modify HubSpot data
-#
-# Important:
-# - Note body availability depends on HubSpot portal configuration
-# - Access is limited to notes readable by the Private App token
+# - Retrieve content of a specific HubSpot note
+# - JWT Required
 # ------------------------------------------------
-@app.get("/api/notes/{note_id}")
+
+@api_router.get("/notes/{note_id}")
 async def fetch_note_body(note_id: str):
     return await get_note_body_by_id(note_id)
 
+
 # ------------------------------------------------
-# Distinct Permit Stages (for UI filters)
+# Distinct Permit Stages API
 # ------------------------------------------------
-@app.get("/api/deals/{sales_rep}/permit-stages/distinct")
+# Purpose:
+# - Returns unique normalized permit stages
+# - Used for UI filter dropdown
+# - JWT Required
+# ------------------------------------------------
+
+@api_router.get("/deals/{sales_rep}/permit-stages/distinct")
 async def distinct_permit_stages(sales_rep: str):
     return await get_distinct_permit_stages(sales_rep)
 
-# ------------------------------------------------
-# NEW: Dashboard by Email (For Wix Integration)
-# ------------------------------------------------
-@app.get("/api/dashboard/email/{user_email}")
-async def dashboard_summary_by_email(user_email: str):
-    logger.info(f"Resolving sales rep for email: {user_email}")
 
-    # 1. Resolve Email -> Sales Rep Name
+# ------------------------------------------------
+# Dashboard by Email API
+# ------------------------------------------------
+# Purpose:
+# - Resolve email → sales rep
+# - Returns dashboard summary
+# - Used for Wix integration
+# - JWT Required
+# ------------------------------------------------
+
+@api_router.get("/dashboard/email/{user_email}")
+async def dashboard_summary_by_email(user_email: str):
     sales_rep_name = await get_sales_rep_name_by_email(user_email)
 
     if not sales_rep_name:
         return {
-            "error": "User not linked", 
-            "message": f"No HubSpot Sales Rep found with email {user_email}",
+            "error": "User not linked",
             "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
             "alerts": {"pre_submittal": [], "post_submittal": []},
             "permits": []
         }
 
-    # 2. Reuse the existing dashboard logic
-    # logger.info(f"Fetching dashboard for resolved name: {sales_rep_name}")
     return await dashboard_summary(sales_rep_name)
 
-def format_invoice_status(val):
-    """
-    Handles: Kick-Off Invoice Status
-    Options based on screenshot: 'Sent', 'Recieved', 'Pending'
-    """
-    if not val:
-        return "Pending"
-        
-    s = str(val).strip()
-    lower_s = s.lower()
-    
-    if lower_s == "sent":
-        return "Sent"
-    if lower_s in ["recieved", "true"]:
-        return "Recieved"
-    if lower_s in ["pending", "false", "none", "--"]:
-        return "Pending"
-        
-    return s
-
-def format_standard_doc(val):
-    """
-    Handles: Floor Plan, Pier Plan, Chassis Plan, Elevations, Sprinkler Plan
-    Options based on screenshots: 'Recieved', 'Pending', 'Not Required', 'Single Wide - Not Required'
-    """
-    if not val:
-        return "Pending"
-    
-    s = str(val).strip()
-    lower_s = s.lower()
-    
-    # Handle boolean/internal quirks
-    if lower_s in ["true", "recieved"]:
-        return "Recieved" # Maintains user's spelling
-    if lower_s in ["false", "none", "--", ""]:
-        return "Pending"
-        
-    # Pass through complex labels like "Single Wide - Not Required"
-    return s
-
-# Helper to extract date only
-def format_date(val):
-    if not val:
-        return " "
-    # Slices the first 10 chars: "2026-01-07"
-    return str(val)[:10]
 
 # ------------------------------------------------
-# Verify Wix Email against HubSpot Contacts
+# Verify Wix Contact API
 # ------------------------------------------------
 # Purpose:
-# - Checks if the email from Wix exists as a Contact in HubSpot
-# - Returns boolean 'match' status
+# - Checks if Wix email exists in HubSpot
+# - Returns dashboard data if matched
+# - JWT Required
 # ------------------------------------------------
-@app.get("/api/verify-wix-contact/{email}")
+
+@api_router.get("/verify-wix-contact/{email}")
 async def verify_wix_contact_email(email: str):
-    # 1. Search HubSpot for the email
     contact = await get_contact_by_email(email)
-    
-    # 2. Compare / Validate
+
     if contact:
-         props = contact.get("properties", {})
-         deals = await search_deals_by_sales_rep(f"{props.get('firstname', '')} {props.get('lastname', '')}".strip())
-
-         return format_dashboard_response(deals)        
-        
-
-def format_dashboard_response(deals):
-    summary = {
-        "pre_submittal": 0,
-        "post_submittal": 0,
-        "completed": 0
-    }
-
-    alerts = {
-        "pre_submittal": [],
-        "post_submittal": []
-    }
-
-    permits = []
-
-    for d in deals:
-        props = d.get("properties", {})
-        # logger.info(f"Deal {d.get('id')} properties keys: {list(props.keys())}")
-        stage = normalize_permit_stage(
-            props.get("dealstage") or d.get("dealstage")
+        props = contact.get("properties", {})
+        deals = await search_deals_by_sales_rep(
+            f"{props.get('firstname', '')} {props.get('lastname', '')}".strip()
         )
+        return format_dashboard_response(deals)
 
-        # ---------------- KPI COUNTS ----------------
-        # Check for substrings to group the stages
-        
-        # Group 1: Pre-Submittal (Fee Estimate, Intake, Pre-Submittal)
-        if any(x in stage for x in ["Fee Estimate", "Intake", "Pre-Submittal"]):
-            summary["pre_submittal"] += 1
-            
-            # Add to alerts if needed
-            alerts["pre_submittal"].append({
-                "deal_id": d.get("id"),
-                "project_name": props.get("dealname"),
-                "date": props.get("hs_lastmodifieddate"),
-                "description": props.get("description", "")
-            })
 
-        # Group 2: Post-Submittal (Submittal)
-        elif "Submittal" in stage:
-            summary["post_submittal"] += 1
-            
-            alerts["post_submittal"].append({
-                "deal_id": d.get("id"),
-                "project_name": props.get("dealname"),
-                "date": props.get("hs_lastmodifieddate"),
-                "description": props.get("description", "")
-            })
+# ------------------------------------------------
+# Project Manager Sales Reps API
+# ------------------------------------------------
+# Purpose:
+# - Returns sales reps under a project manager
+# - JWT Required
+# ------------------------------------------------
 
-        # Group 3: Completed (Approved, Closed)
-        elif any(x in stage for x in ["Approved", "Closed", "Issued"]):
-            summary["completed"] += 1
-
-        # # ---------------- ALERT CARDS ----------------
-        # alert_item = {
-        #     "deal_id": d.get("id"),
-        #     "project_name": props.get("dealname"),
-        #     "date": props.get("hs_lastmodifieddate"),
-        #     "description": props.get("description", "")
-        # }
-
-        # if stage == "Pre-Submittal":
-        #     alerts["pre_submittal"].append(alert_item)
-
-        # if stage == "Post-Submittal":
-        #     alerts["post_submittal"].append(alert_item)
-
-        # ---------------- TABLE ROW ----------------
-        permits.append({
-            "deal_id": d.get("id"),
-            "deal_name": props.get("dealname"),
-            "stage": stage,
-            "address": props.get("project_address"),
-            "jurisdiction": props.get("juridstiction"),
-            "dependency": props.get("dependency")
-        })
-
-    return {
-        "summary": summary,
-        "alerts": alerts,
-        "permits": permits
-    }
-
-@app.get("/api/project-manager/{pm_email}/sales-reps")
+@api_router.get("/project-manager/{pm_email}/sales-reps")
 async def sales_reps_for_pm(pm_email: str):
     reps = await get_sales_reps_under_pm(pm_email)
-
     return {
         "project_manager": pm_email,
         "sales_reps": reps,
         "count": len(reps)
     }
 
-@app.get("/api/gm-dashboard/{email}")
-async def gm_dashboard_summary(email: str):
-    logger.info(f"Fetching GM dashboard for: {email}")
 
-    # 1. Resolve GM's Company
+# ------------------------------------------------
+# GM Dashboard API
+# ------------------------------------------------
+# Purpose:
+# - Returns company-level aggregated dashboard
+# - JWT Required
+# ------------------------------------------------
+
+@api_router.get("/gm-dashboard/{email}")
+async def gm_dashboard_summary(email: str):
     company_name = await get_gm_assigned_company(email)
 
     if not company_name:
         return {
-            "error": "Configuration Error", 
-            "message": f"User {email} is not linked to any Company in HubSpot.",
+            "error": "Configuration Error",
             "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
             "agents": [],
             "permits": []
         }
 
-    # 2. Fetch and Group Data
     return await get_gm_dashboard_data(company_name)
+
+
+# Attach secured router
+app.include_router(api_router)
