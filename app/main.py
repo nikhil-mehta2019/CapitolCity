@@ -15,7 +15,8 @@ from app.hubspot import (
     get_deals_by_contact_id,
     get_sales_reps_under_pm,
     get_gm_assigned_company,
-    get_gm_dashboard_data
+    get_gm_dashboard_data,
+    get_latest_activity_for_deal
 )
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,14 @@ async def fetch_deal(deal_id: str):
 
     
     # 2. Fetch the pinned note
-    pinned_note = await get_pinned_note_for_deal(deal_id)
+    pinned_activity = await get_pinned_note_for_deal(props.get("hs_pinned_engagement_id"))
+
+    if not pinned_activity:
+        pinned_activity = {
+            "type": None,
+            "text": "No pinned updates",
+            "timestamp": None
+        }
 
     return {
         "info": {
@@ -118,9 +126,7 @@ async def fetch_deal(deal_id: str):
             "sprinkler_plan": format_standard_doc(props.get("sprinkler_plan")),
             "pending_articles": props.get("pending_articles") or "None"
         },
-        "updates": {
-            "pinned_note": pinned_note.get("body") if pinned_note else "No pinned updates."
-        }
+        "updates": pinned_activity
     }
 
 # ------------------------------------------------

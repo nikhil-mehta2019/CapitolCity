@@ -34,20 +34,21 @@ async def get_deal(deal_id: str):
             "project_address",
             "dependency",
             # --- New Fields for Detail View ---
-            "general_contractor",      # Verify this internal name in HubSpot
-            "finnace",                 # Verify this internal name
-            "kickoff_invoice_status",  # Verify this internal name
-            "project_start_date",      # Verify this internal name ask clinet exact which property to map
+            "general_contractor",      
+            "finnace",                 
+            "kickoff_invoice_status",  
+            "project_start_date",      
             
             # --- Document Fields ---
-            "floor_plan",              # Verify this internal name
-            "pier_plan",               # Verify this internal name
-            "chasis_plan",             # Verify this internal name
-            "elevations",              # Verify this internal name
-            "sprinkler_plan",          # Verify this internal name
-            "pending_articles",        # Verify this internal name
+            "floor_plan",              
+            "pier_plan",               
+            "chasis_plan",             
+            "elevations",              
+            "sprinkler_plan",          
+            "pending_articles",        
             
-            "sales_rep"
+            "sales_rep",
+            "hs_pinned_engagement_id",
         ]
     }
 
@@ -109,67 +110,58 @@ async def search_deals_by_sales_rep(sales_rep: str):
 # - They are Notes (Engagements) associated to the Deal
 # - We search notes linked to the deal and return the pinned one
 # ------------------------------------------------
-async def get_pinned_note_for_deal(deal_id: str):
-    search_url = f"{BASE_URL}/crm/v3/objects/notes/search"
+async def get_pinned_note_for_deal(pinned_id: str):
 
-    search_payload = {
-        "filterGroups": [
-            {
-                "filters": [
-                    {
-                        "propertyName": "associations.deal",
-                        "operator": "EQ",
-                        "value": deal_id
-                    }
-                ]
-            }
-        ],
-        "sorts": ["-hs_createdate"],
-        "limit": 1
+    if not pinned_id:
+        return None
+
+    activity_types = {
+        "notes": ["hs_note_body", "hs_timestamp"],
+        "tasks": ["hs_task_subject", "hs_task_body", "hs_timestamp"],
+        "meetings": ["hs_meeting_title", "hs_meeting_body", "hs_timestamp"],
+        "calls": ["hs_call_title", "hs_call_body", "hs_timestamp"],
+        "emails": ["hs_email_subject", "hs_email_text", "hs_timestamp"]
     }
 
     async with httpx.AsyncClient() as client:
-        search_resp = await client.post(
-            search_url,
-            json=search_payload,
-            headers=headers
-        )
-        search_resp.raise_for_status()
 
-        search_json = search_resp.json()
+        for activity, fields in activity_types.items():
 
-        # 🔴 LOG RAW SEARCH RESPONSE
-        # logger.info(
-        #     "HubSpot NOTES SEARCH response:\n%s",
-        #     json.dumps(search_json, indent=2)
-        # )
+            url = f"{BASE_URL}/crm/v3/objects/{activity}/{pinned_id}"
 
-        notes = search_json.get("results", [])
-        if not notes:
-            return None
+            params = {
+                "properties": ",".join(fields)
+            }
 
-        note_id = notes[0]["id"]
+            resp = await client.get(url, headers=headers, params=params)
 
-        # ---- fetch full note ----
-        detail_url = f"{BASE_URL}/crm/v3/objects/notes/{note_id}"
-        detail_resp = await client.get(detail_url, headers=headers)
-        detail_resp.raise_for_status()
+            if resp.status_code == 200:
 
-        detail_json = detail_resp.json()
+                data = resp.json()
+                props = data.get("properties", {})
 
-        # 🔴 LOG RAW NOTE DETAIL RESPONSE
-        # logger.info(
-        #     "HubSpot NOTE DETAIL response:\n%s",
-        #     json.dumps(detail_json, indent=2)
-        # )
+                text = (
+                    props.get("hs_note_body")
+                    or props.get("hs_task_subject")
+                    or props.get("hs_task_body")
+                    or props.get("hs_meeting_title")
+                    or props.get("hs_meeting_body")
+                    or props.get("hs_call_title")
+                    or props.get("hs_call_body")
+                    or props.get("hs_email_subject")
+                    or props.get("hs_email_text")
+                    or ""
+                )
 
-    props = detail_json.get("properties", {})
+                return {
+                    "id": pinned_id,
+                    "type": activity[:-1],
+                    "text": text,
+                    "timestamp": props.get("hs_timestamp")
+                }
 
-    return {
-        "id": note_id,
-        "body": await get_note_body_by_id(note_id),
-        "created_at": props.get("hs_createdate")
-    }
+    return None
+
 async def get_all_notes(limit: int = 100, after: str | None = None):
     url = f"{BASE_URL}/crm/v3/objects/notes"
     params = {"limit": limit}
@@ -617,3 +609,50 @@ async def get_gm_dashboard_data(company_name: str):
     dashboard_data["agents"] = list(dashboard_data["agents"].values())
     
     return dashboard_data
+
+async def get_latest_activity_for_deal(deal_id: str):
+
+    url = f"{BASE_URL}/crm/v3/objects/notes/search"
+
+    payload = {
+        "filterGroups": [
+            {
+                "filters": [
+                    {
+                        "propertyName": "associations.deal",
+                        "operator": "EQ",
+                        "value": deal_id
+                    }
+                ]
+            }
+        ],
+        "sorts": [
+            {
+                "propertyName": "hs_createdate",
+                "direction": "DESCENDING"
+            }
+        ],
+        "limit": 1,
+        "properties": ["hs_note_body", "hs_createdate"]
+    }
+
+    async with httpx.AsyncClient() as client:
+
+        resp = await client.post(
+            url,
+            json=payload,
+            headers=headers
+        )
+
+        resp.raise_for_status()
+
+        data = resp.json()
+
+        results = data.get("results", [])
+
+        if not results:
+            return None
+
+        props = results[0]["properties"]
+
+        return props.get("hs_note_body")

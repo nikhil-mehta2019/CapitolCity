@@ -41,12 +41,12 @@ jobs:
           aws lightsail create-container-service-deployment \
             --service-name ${{ secrets.LIGHTSAIL_SERVICE_NAME }} \
             --containers '{
-              "${{ secrets.LIGHTSAIL_CONTAINER_NAME }}": {
-                "image": ":${{ secrets.LIGHTSAIL_SERVICE_NAME }}.latest",
+              "hubspot": {
+                "image": "capitolcityapi.hubspot.1",
                 "ports": {
                   "8000": "HTTP"
                 }
-              }
+              } 
             }' \
             --public-endpoint '{
               "containerName": "${{ secrets.LIGHTSAIL_CONTAINER_NAME }}",
