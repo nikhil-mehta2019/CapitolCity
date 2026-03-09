@@ -287,6 +287,7 @@ async def verify_wix_contact_email(email: str):
 
 def format_dashboard_response(deals):
     summary = {
+        "intake": 0,
         "pre_submittal": 0,
         "post_submittal": 0,
         "completed": 0
@@ -309,11 +310,13 @@ def format_dashboard_response(deals):
         # ---------------- KPI COUNTS ----------------
         # Check for substrings to group the stages
         
-        # Group 1: Pre-Submittal (Fee Estimate, Intake, Pre-Submittal)
-        if any(x in stage for x in ["Fee Estimate", "Intake", "Pre-Submittal"]):
+        if "Intake" in stage:
+            summary["intake"] += 1
+
+        # Pre-Submittal
+        elif any(x in stage for x in ["Fee Estimate", "Pre-Submittal"]):
             summary["pre_submittal"] += 1
-            
-            # Add to alerts if needed
+
             alerts["pre_submittal"].append({
                 "deal_id": d.get("id"),
                 "project_name": props.get("dealname"),
@@ -321,10 +324,10 @@ def format_dashboard_response(deals):
                 "description": props.get("description", "")
             })
 
-        # Group 2: Post-Submittal (Submittal)
+        # Post-Submittal
         elif "Submittal" in stage:
             summary["post_submittal"] += 1
-            
+
             alerts["post_submittal"].append({
                 "deal_id": d.get("id"),
                 "project_name": props.get("dealname"),
@@ -332,7 +335,7 @@ def format_dashboard_response(deals):
                 "description": props.get("description", "")
             })
 
-        # Group 3: Completed (Approved, Closed)
+        # Completed
         elif any(x in stage for x in ["Approved", "Closed", "Issued"]):
             summary["completed"] += 1
 
