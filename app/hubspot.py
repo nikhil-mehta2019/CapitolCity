@@ -561,7 +561,7 @@ async def get_gm_dashboard_data(company_name: str):
 
     # 3. Initialize UI Structure
     dashboard_data = {
-        "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
+        "summary": {"intake":0,"pre_submittal": 0, "post_submittal": 0, "completed": 0},
         "agents": {},  # Dictionary for grouping: {"Ayudh": {count: 5, deals: []}}
         "permits": []  # Flat list for the table
     }
@@ -573,7 +573,9 @@ async def get_gm_dashboard_data(company_name: str):
         stage = normalize_permit_stage(props.get("dealstage"))
         
         # --- A. Summary Counts ---
-        if any(x in stage for x in ["Fee Estimate", "Intake", "Pre-Submittal"]):
+        if "Intake" in stage:
+            summary["intake"] += 1
+        elif any(x in stage for x in ["Fee Estimate", "Pre-Submittal"]):
             dashboard_data["summary"]["pre_submittal"] += 1
         elif "Submittal" in stage:
             dashboard_data["summary"]["post_submittal"] += 1
