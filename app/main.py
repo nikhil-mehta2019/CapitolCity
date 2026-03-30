@@ -105,10 +105,17 @@ async def fetch_deal(deal_id: str):
             "text": "No pinned updates",
             "timestamp": None
         }
+    stage = normalize_permit_stage(props.get("dealstage") or d.get("dealstage"))
+
+    if stage:
+        stage = stage.split("(")[0].strip()   # remove "(Permit Pipeline)"
+        stage = f"{stage} Documents"
 
     return {
         "info": {
             "deal_name": props.get("dealname") or "Unnamed Deal",
+            "dealstage": stage,
+            "permit_stage": props.get("permit_stage") or "Unnamed Permit",
             "address": props.get("project_address") or "NA",
             "jurisdiction": props.get("juridstiction") or "NA",
             "general_contractor": props.get("general_contractor") or "NA",
@@ -126,7 +133,12 @@ async def fetch_deal(deal_id: str):
             "sprinkler_plan": format_standard_doc(props.get("sprinkler_plan")),
             "pending_articles": props.get("pending_articles") or "None"
         },
-        "updates": pinned_activity
+        "updates": pinned_activity,
+        "cd_set_status": props.get("cd_set_status") or "NA",
+        "site_plan_zoom_status": props.get("site_plan_zoom_status") or "NA",
+        "requested_date": format_date(props.get("requested_date")),
+        "eta": format_date(props.get("eta")),
+        "customer_packet_status": props.get("customer_packet_status") or "NA"
     }
 
 # ------------------------------------------------

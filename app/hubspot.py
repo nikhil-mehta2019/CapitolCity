@@ -29,6 +29,7 @@ async def get_deal(deal_id: str):
     params = {
         "properties": [
             "dealname",
+            "dealstage",
             "permit_stage",
             "juridstiction",
             "project_address",
@@ -49,6 +50,14 @@ async def get_deal(deal_id: str):
             
             "sales_rep",
             "hs_pinned_engagement_id",
+
+           
+            "cd_set_status", 
+            "site_plan_zoom_status", #Site Plan Meeting Status
+            "requested_date",
+            "eta", #SLA
+            "customer_packet_status"
+
         ]
     }
 
