@@ -583,7 +583,7 @@ async def get_gm_dashboard_data(company_name: str):
         
         # --- A. Summary Counts ---
         if "Intake" in stage:
-            summary["intake"] += 1
+            dashboard_data["summary"]["intake"] += 1
         elif any(x in stage for x in ["Fee Estimate", "Pre-Submittal"]):
             dashboard_data["summary"]["pre_submittal"] += 1
         elif "Submittal" in stage:
@@ -667,3 +667,4 @@ async def get_latest_activity_for_deal(deal_id: str):
         props = results[0]["properties"]
 
         return props.get("hs_note_body")
+
