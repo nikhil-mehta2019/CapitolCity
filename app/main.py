@@ -16,7 +16,8 @@ from app.hubspot import (
     get_sales_reps_under_pm,
     get_gm_assigned_company,
     get_gm_dashboard_data,
-    get_latest_activity_for_deal
+    get_latest_activity_for_deal,
+    get_gm_dashboard_by_email
 )
 
 logger = logging.getLogger(__name__)
@@ -396,16 +397,17 @@ async def gm_dashboard_summary(email: str):
     logger.info(f"Fetching GM dashboard for: {email}")
 
     # 1. Resolve GM's Company
-    company_name = await get_gm_assigned_company(email)
+    # company_name = await get_gm_assigned_company(email)
 
-    if not company_name:
-        return {
-            "error": "Configuration Error", 
-            "message": f"User {email} is not linked to any Company in HubSpot.",
-            "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
-            "agents": [],
-            "permits": []
-        }
+    # if not company_name:
+    #     return {
+    #         "error": "Configuration Error", 
+    #         "message": f"User {email} is not linked to any Company in HubSpot.",
+    #         "summary": {"pre_submittal": 0, "post_submittal": 0, "completed": 0},
+    #         "agents": [],
+    #         "permits": []
+    #     }
 
     # 2. Fetch and Group Data
-    return await get_gm_dashboard_data(company_name)
+    #return await get_gm_dashboard_data(company_name)
+    return await get_gm_dashboard_by_email(email)

@@ -668,3 +668,92 @@ async def get_latest_activity_for_deal(deal_id: str):
 
         return props.get("hs_note_body")
 
+async def get_gm_dashboard_by_email(manager_email: str):
+    async with httpx.AsyncClient() as client:
+        # STEP 1: Find Sales Reps (Contacts) under this Manager
+        contact_search_url = "https://api.hubapi.com/crm/v3/objects/contacts/search"
+        contact_payload = {
+            "filterGroups": [{"filters": [{
+                "propertyName": "reporting_manager",
+                "operator": "EQ",
+                "value": manager_email
+            }]}],
+            "properties": ["firstname", "lastname", "email"]
+        }
+        logger.info(f"Fetching GM dashboard for : {manager_email}")
+        contact_res = await client.post(contact_search_url, json=contact_payload, headers=headers)
+        reps = contact_res.json().get("results", [])
+        logger.info(f"Fetching deals for : {reps}")
+        if not reps:
+            return {"summary": {"intake":0,"pre_submittal": 0, "post_submittal": 0, "completed": 0}, "agents": [], "permits": []}
+
+        logger.info(f"reps found")
+        # Create maps for Step 2
+        rep_names = []
+        agent_email_map = {}
+        for r in reps:
+            name = f"{r['properties'].get('firstname', '')} {r['properties'].get('lastname', '')}".strip()
+            email = r['properties'].get('email')
+            rep_names.append(name)
+            agent_email_map[name] = email
+
+        # STEP 2: Get all deals linked to these Sales Reps
+        deal_search_url = "https://api.hubapi.com/crm/v3/objects/deals/search"
+        deal_payload = {
+            "filterGroups": [{"filters": [{
+                "propertyName": "sales_rep",
+                "operator": "IN",
+                "values": rep_names
+            }]}],
+            "properties": ["dealname", "dealstage", "sales_rep", "project_address", "juridstiction"],
+             "limit": 100
+        }
+        
+        deal_res = await client.post(deal_search_url, json=deal_payload, headers=headers)
+        deals = deal_res.json().get("results", [])
+
+        # STEP 3: Aggregate into your UI Structure
+        dashboard_data = {
+            "summary": {"intake": 0, "pre_submittal": 0, "post_submittal": 0, "completed": 0},
+            "agents": {},
+            "permits": []
+        }
+
+        for deal in deals:
+            props = deal.get("properties", {})
+            stage = normalize_permit_stage(props.get("dealstage"))
+            agent_name = props.get("sales_rep") or "Unassigned"
+            
+            # A. Summary Counts (RE-UTILIZED Logic)
+            if "Intake" in stage:
+                dashboard_data["summary"]["intake"] += 1
+            elif any(x in stage for x in ["Fee Estimate", "Pre-Submittal"]):
+                dashboard_data["summary"]["pre_submittal"] += 1
+            elif "Submittal" in stage:
+                dashboard_data["summary"]["post_submittal"] += 1
+            elif any(x in stage for x in ["Approved", "Closed", "Issued"]):
+                dashboard_data["summary"]["completed"] += 1
+
+            # B. Group by Sales Agent
+            if agent_name not in dashboard_data["agents"]:
+                dashboard_data["agents"][agent_name] = {
+                    "name": agent_name,
+                    "email": agent_email_map.get(agent_name, "Unassigned"),
+                    "count": 0,
+                    "deal_ids": []
+                }
+            dashboard_data["agents"][agent_name]["count"] += 1
+            dashboard_data["agents"][agent_name]["deal_ids"].append(deal.get("id"))
+
+            # C. Table Data
+            dashboard_data["permits"].append({
+                "deal_id": deal.get("id"),
+                "deal_name": props.get("dealname"),
+                "stage": stage,
+                "address": props.get("project_address"),
+                "jurisdiction": props.get("juridstiction"),
+                "sales_agent": agent_name
+            })
+
+        dashboard_data["agents"] = list(dashboard_data["agents"].values())
+        return dashboard_data
