@@ -2,6 +2,8 @@ import asyncio
 import httpx
 import json
 import logging
+import re
+from html import unescape
 from app.config import HUBSPOT_TOKEN, BASE_URL
 
 # ------------------------------------------------
@@ -137,10 +139,7 @@ async def get_pinned_note_for_deal(pinned_id: str):
         for activity, fields in activity_types.items():
 
             url = f"{BASE_URL}/crm/v3/objects/{activity}/{pinned_id}"
-
-            params = {
-                "properties": ",".join(fields)
-            }
+            params = {"properties": ",".join(fields)}
 
             resp = await client.get(url, headers=headers, params=params)
 
@@ -149,7 +148,7 @@ async def get_pinned_note_for_deal(pinned_id: str):
                 data = resp.json()
                 props = data.get("properties", {})
 
-                text = (
+                raw_text = (
                     props.get("hs_note_body")
                     or props.get("hs_task_subject")
                     or props.get("hs_task_body")
@@ -162,10 +161,24 @@ async def get_pinned_note_for_deal(pinned_id: str):
                     or ""
                 )
 
+                cleaned_text = clean_html(raw_text)
+
+                # 🎯 format HTML nicely
+                if activity == "notes":
+                    formatted_text = format_note_html(cleaned_text, activity)
+                else:
+                    icon = get_icon(activity)
+                    formatted_text = f"""
+                    <div style="font-family: Arial;">
+                        <h3>{icon} {activity.capitalize()}</h3>
+                        <p>{cleaned_text}</p>
+                    </div>
+                    """
+
                 return {
                     "id": pinned_id,
                     "type": activity[:-1],
-                    "text": text,
+                    "text": formatted_text,   # ✅ ONLY THIS CHANGED
                     "timestamp": props.get("hs_timestamp")
                 }
 
@@ -757,3 +770,57 @@ async def get_gm_dashboard_by_email(manager_email: str):
 
         dashboard_data["agents"] = list(dashboard_data["agents"].values())
         return dashboard_data
+
+def clean_html(raw_html: str) -> str:
+    if not raw_html:
+        return ""
+    text = re.sub(r"<.*?>", "", raw_html)
+    return unescape(text).strip()
+
+
+def get_icon(activity_type):
+    return {
+        "notes": "📝",
+        "emails": "📧",
+        "calls": "📞",
+        "tasks": "✅",
+        "meetings": "📅"
+    }.get(activity_type, "📌")
+
+
+def format_note_html(text: str, activity: str):
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+
+    status = ""
+    blockers = ""
+    next_step = ""
+    timeline = []
+
+    for line in lines:
+        if line.upper().startswith("STATUS:"):
+            status = line
+        elif line.upper().startswith("BLOCKERS:"):
+            blockers = line
+        elif line.upper().startswith("NEXT STEP:"):
+            next_step = line
+        else:
+            if re.match(r"\d{2}/\d{2}\s*-", line):
+                timeline.append(line)
+
+    icon = get_icon(activity)
+
+    html = f"""
+    <div style="font-family: Arial; line-height:1.5;">
+        <h3 style="margin-bottom:8px;">{icon} {activity.capitalize()}</h3>
+        
+        {f"<p><b>{status}</b></p>" if status else ""}
+        {f"<p><b>{blockers}</b></p>" if blockers else ""}
+        {f"<p><b>{next_step}</b></p>" if next_step else ""}
+
+        <ul style="padding-left:18px;">
+            {''.join([f"<li>{item}</li>" for item in timeline[:10]])}
+        </ul>
+    </div>
+    """
+
+    return html
