@@ -774,7 +774,13 @@ async def get_gm_dashboard_by_email(manager_email: str):
 def clean_html(raw_html: str) -> str:
     if not raw_html:
         return ""
-    text = re.sub(r"<.*?>", "", raw_html)
+
+    # ✅ Convert block tags to line breaks FIRST
+    text = raw_html.replace("</p>", "\n").replace("<br>", "\n").replace("<br/>", "\n")
+
+    # remove remaining HTML
+    text = re.sub(r"<.*?>", "", text)
+
     return unescape(text).strip()
 
 
@@ -803,24 +809,32 @@ def format_note_html(text: str, activity: str):
             blockers = line
         elif line.upper().startswith("NEXT STEP:"):
             next_step = line
-        else:
-            if re.match(r"\d{2}/\d{2}\s*-", line):
-                timeline.append(line)
+        elif re.match(r"\d{1,2}/\d{1,2}\s*-", line):
+            timeline.append(line)
 
     icon = get_icon(activity)
 
     html = f"""
-    <div style="font-family: Arial; line-height:1.5;">
-        <h3 style="margin-bottom:8px;">{icon} {activity.capitalize()}</h3>
-        
-        {f"<p><b>{status}</b></p>" if status else ""}
-        {f"<p><b>{blockers}</b></p>" if blockers else ""}
-        {f"<p><b>{next_step}</b></p>" if next_step else ""}
+            <div style="font-family: Arial; line-height:1.5;">
+                <h3 style="
+                    margin-bottom:10px;
+                    padding-bottom:6px;
+                    font-weight:700;
+                    font-size:18px;
+                    color:#2c3e50;
+                    border-bottom:1px solid #e0e0e0;
+                ">
+                    {icon} {activity.capitalize()}
+                </h3>
 
-        <ul style="padding-left:18px;">
-            {''.join([f"<li>{item}</li>" for item in timeline[:10]])}
-        </ul>
-    </div>
-    """
+                {f"<p><b>{status}</b></p>" if status else ""}
+                {f"<p>{blockers}</p>" if blockers else ""}
+                {f"<p>{next_step}</p>" if next_step else ""}
+
+                <ul style="padding-left:18px;">
+                    {''.join(formatted_items)}
+                </ul>
+            </div>
+            """
 
     return html
