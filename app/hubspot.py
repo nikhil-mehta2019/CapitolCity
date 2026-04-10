@@ -829,32 +829,18 @@ def format_note_html(text: str, activity: str):
         if len(parts) == 2:
             date = parts[0].strip()
             msg = parts[1].strip()
-
-            # normalize date (optional)
-            try:
-                month, day = date.split("/")
-                date = f"{int(month):02d}/{int(day):02d}"
-            except:
-                pass
-
-            formatted_items.append(f"<span style='display:block; margin-bottom:3px;'>• <b>{date}</b> - {msg}</span>")
+            formatted_items.append(f"• {date} - {msg}")
         else:
             formatted_items.append(f"• {item}")
 
     # ✅ Build HTML AFTER loop (Wix-compatible)
     html = f"""
-        <span style="font-size:18px; font-weight:700; color:#2c3e50;">
-            {icon} {activity.capitalize()}
-        </span>
+        <b>{icon} {activity.capitalize()}</b>
+        {f"<b>{status}</b>" if status else ""}
+        {f"<b>{blockers}</b>" if blockers else ""}
+        {f"<b>{next_step}</b>" if next_step else ""}
 
-        <br>
-        <span style="display:block; height:1px; background:#e0e0e0; margin:6px 0 10px 0;"></span>
-
-        {f"<b>{status}</b><br>" if status else ""}
-        {f"{blockers}<br>" if blockers else ""}
-        {f"{next_step}<br><br>" if next_step else ""}
-
-        {"".join(formatted_items)}
+        {"<br>".join(formatted_items)}
         """
 
     return html
