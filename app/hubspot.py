@@ -801,7 +801,7 @@ def format_note_html(text: str, activity: str):
     blockers = ""
     next_step = ""
     timeline = []
-
+    
     for line in lines:
         if line.upper().startswith("STATUS:"):
             status = line
@@ -813,28 +813,42 @@ def format_note_html(text: str, activity: str):
             timeline.append(line)
 
     icon = get_icon(activity)
+    formatted_items = []
 
-    html = f"""
-            <div style="font-family: Arial; line-height:1.5;">
-                <h3 style="
-                    margin-bottom:10px;
-                    padding-bottom:6px;
-                    font-weight:700;
-                    font-size:18px;
-                    color:#2c3e50;
-                    border-bottom:1px solid #e0e0e0;
-                ">
-                    {icon} {activity.capitalize()}
-                </h3>
+    for item in timeline[:10]:
+        parts = item.split("-", 1)
 
-                {f"<p><b>{status}</b></p>" if status else ""}
-                {f"<p>{blockers}</p>" if blockers else ""}
-                {f"<p>{next_step}</p>" if next_step else ""}
+        if len(parts) == 2:
+            date = parts[0].strip()
+            msg = parts[1].strip()
 
-                <ul style="padding-left:18px;">
-                    {''.join(formatted_items)}
-                </ul>
-            </div>
-            """
+            formatted_items.append(
+                f"<li style='margin-bottom:6px;'><b>{date}</b> - {msg}</li>"
+            )
+        else:
+            formatted_items.append(f"<li>{item}</li>")
+            
+        html = f"""
+                <div style="font-family: Arial; line-height:1.5;">
+                    <h3 style="
+                        margin-bottom:10px;
+                        padding-bottom:6px;
+                        font-weight:700;
+                        font-size:18px;
+                        color:#2c3e50;
+                        border-bottom:1px solid #e0e0e0;
+                    ">
+                        {icon} {activity.capitalize()}
+                    </h3>
+
+                    {f"<p><b>{status}</b></p>" if status else ""}
+                    {f"<p>{blockers}</p>" if blockers else ""}
+                    {f"<p>{next_step}</p>" if next_step else ""}
+
+                    <ul style="padding-left:18px;">
+                        {''.join(formatted_items)}
+                    </ul>
+                </div>
+                """
 
     return html
