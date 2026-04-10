@@ -775,8 +775,14 @@ def clean_html(raw_html: str) -> str:
     if not raw_html:
         return ""
 
-    # ✅ Convert block tags to line breaks FIRST
-    text = raw_html.replace("</p>", "\n").replace("<br>", "\n").replace("<br/>", "\n")
+    text = raw_html
+
+    # ✅ Handle ALL break cases
+    text = text.replace("</p><p>", "\n")
+    text = text.replace("</p>", "\n")
+    text = text.replace("<br>", "\n")
+    text = text.replace("<br/>", "\n")
+    text = text.replace("<br />", "\n")
 
     # remove remaining HTML
     text = re.sub(r"<.*?>", "", text)
@@ -801,7 +807,7 @@ def format_note_html(text: str, activity: str):
     blockers = ""
     next_step = ""
     timeline = []
-    
+
     for line in lines:
         if line.upper().startswith("STATUS:"):
             status = line
@@ -813,6 +819,8 @@ def format_note_html(text: str, activity: str):
             timeline.append(line)
 
     icon = get_icon(activity)
+
+    # ✅ Wix-safe bullet formatting
     formatted_items = []
 
     for item in timeline[:10]:
@@ -822,33 +830,31 @@ def format_note_html(text: str, activity: str):
             date = parts[0].strip()
             msg = parts[1].strip()
 
-            formatted_items.append(
-                f"<li style='margin-bottom:6px;'><b>{date}</b> - {msg}</li>"
-            )
+            # normalize date (optional)
+            try:
+                month, day = date.split("/")
+                date = f"{int(month):02d}/{int(day):02d}"
+            except:
+                pass
+
+            formatted_items.append(f"<span style='display:block; margin-bottom:3px;'>• <b>{date}</b> - {msg}</span>")
         else:
-            formatted_items.append(f"<li>{item}</li>")
-            
-        html = f"""
-                <div style="font-family: Arial; line-height:1.5;">
-                    <h3 style="
-                        margin-bottom:10px;
-                        padding-bottom:6px;
-                        font-weight:700;
-                        font-size:18px;
-                        color:#2c3e50;
-                        border-bottom:1px solid #e0e0e0;
-                    ">
-                        {icon} {activity.capitalize()}
-                    </h3>
+            formatted_items.append(f"• {item}")
 
-                    {f"<p><b>{status}</b></p>" if status else ""}
-                    {f"<p>{blockers}</p>" if blockers else ""}
-                    {f"<p>{next_step}</p>" if next_step else ""}
+    # ✅ Build HTML AFTER loop (Wix-compatible)
+    html = f"""
+        <span style="font-size:18px; font-weight:700; color:#2c3e50;">
+            {icon} {activity.capitalize()}
+        </span>
 
-                    <ul style="padding-left:18px;">
-                        {''.join(formatted_items)}
-                    </ul>
-                </div>
-                """
+        <br>
+        <span style="display:block; height:1px; background:#e0e0e0; margin:6px 0 10px 0;"></span>
+
+        {f"<b>{status}</b><br>" if status else ""}
+        {f"{blockers}<br>" if blockers else ""}
+        {f"{next_step}<br><br>" if next_step else ""}
+
+        {"".join(formatted_items)}
+        """
 
     return html
