@@ -810,37 +810,84 @@ def format_note_html(text: str, activity: str):
 
     for line in lines:
         if line.upper().startswith("STATUS:"):
-            status = line
+            status = line.replace("STATUS:", "").strip()
         elif line.upper().startswith("BLOCKERS:"):
-            blockers = line
+            blockers = line.replace("BLOCKERS:", "").strip()
         elif line.upper().startswith("NEXT STEP:"):
-            next_step = line
+            next_step = line.replace("NEXT STEP:", "").strip()
         elif re.match(r"\d{1,2}/\d{1,2}\s*-", line):
             timeline.append(line)
 
     icon = get_icon(activity)
 
-    # ✅ Wix-safe bullet formatting
-    formatted_items = []
-
+    # 🎯 Build timeline
+    timeline_html = ""
     for item in timeline[:10]:
         parts = item.split("-", 1)
 
         if len(parts) == 2:
             date = parts[0].strip()
             msg = parts[1].strip()
-            formatted_items.append(f"• {date} - {msg}")
         else:
-            formatted_items.append(f"• {item}")
+            date = ""
+            msg = item
 
-    # ✅ Build HTML AFTER loop (Wix-compatible)
-    html = f"""
-        <strong>{icon} {activity.capitalize()}</strong>
-        {f"<strong>{status}</strong>" if status else ""}
-        {f"<strong>{blockers}</strong>" if blockers else ""}
-        {f"<strong>{next_step}</strong>" if next_step else ""}
+        timeline_html += f"""
+        <div style="position: relative; padding-left: 20px; margin-bottom: 12px;">
+            <div style="
+                position:absolute;
+                left:0;
+                top:5px;
+                width:8px;
+                height:8px;
+                background:#2563eb;
+                border-radius:50%;
+            "></div>
 
-        {"<br>".join(formatted_items)}
+            <div style="font-weight:bold; font-size:13px; color:#555;">
+                {date}
+            </div>
+
+            <div style="font-size:14px;">
+                {msg}
+            </div>
+        </div>
         """
+
+    html = f"""
+    <div style="font-family: Arial; font-size:14px; line-height:1.5;">
+
+        <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">
+            {icon} {activity.capitalize()}
+        </div>
+
+        <div style="margin-bottom:12px;">
+            <span style="
+                background:#dcfce7;
+                color:#166534;
+                padding:4px 8px;
+                border-radius:6px;
+                font-size:12px;
+                font-weight:bold;
+            ">
+                STATUS: {status}
+            </span>
+        </div>
+
+        <div style="margin-bottom:10px;">
+            {f"<div><strong>Blockers:</strong> {blockers}</div>" if blockers else ""}
+            {f"<div><strong>Next Step:</strong> {next_step}</div>" if next_step else ""}
+        </div>
+
+        <div style="
+            border-left:2px solid #e5e7eb;
+            padding-left:10px;
+            margin-top:10px;
+        ">
+            {timeline_html}
+        </div>
+
+    </div>
+    """
 
     return html
