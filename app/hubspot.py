@@ -835,10 +835,10 @@ def format_note_html(text: str, activity: str):
 
     # ✅ Build HTML AFTER loop (Wix-compatible)
     html = f"""
-        <b>{icon} {activity.capitalize()}</b>
-        {f"<b>{status}</b>" if status else ""}
-        {f"<b>{blockers}</b>" if blockers else ""}
-        {f"<b>{next_step}</b>" if next_step else ""}
+        <strong>{icon} {activity.capitalize()}</strong>
+        {f"<strong>{status}</strong>" if status else ""}
+        {f"<strong>{blockers}</strong>" if blockers else ""}
+        {f"<strong>{next_step}</strong>" if next_step else ""}
 
         {"<br>".join(formatted_items)}
         """
