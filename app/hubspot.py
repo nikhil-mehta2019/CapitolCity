@@ -857,10 +857,6 @@ def format_note_html(text: str, activity: str):
     html = f"""
     <div style="font-family: Arial; font-size:14px; line-height:1.5;">
 
-        <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">
-            {icon} {activity.capitalize()}
-        </div>
-
         <div style="margin-bottom:12px;">
             <span style="
                 background:#dcfce7;
