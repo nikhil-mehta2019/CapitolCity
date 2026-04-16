@@ -858,21 +858,17 @@ def format_note_html(text: str, activity: str):
     <div style="font-family: Arial; font-size:14px; line-height:1.5;">
 
         <div style="margin-bottom:12px;">
-            <span style="
-                background:#dcfce7;
-                color:#166534;
-                padding:4px 8px;
-                border-radius:6px;
-                font-size:12px;
-                font-weight:bold;
-            ">
-                STATUS: {status}
-            </span>
-        </div>
-
-        <div style="margin-bottom:10px;">
-            {f"<div><strong>Blockers:</strong> {blockers}</div>" if blockers else ""}
-            {f"<div><strong>Next Step:</strong> {next_step}</div>" if next_step else ""}
+            <div style="margin-bottom:6px;">
+                <span style="
+                    background:#dcfce7;
+                    color:#166534;
+                    padding:4px 8px;
+                    border-radius:6px;
+                    font-weight:bold;
+                ">STATUS: {status}</span>
+            </div>
+            {f'<div style="margin-bottom:6px;"><strong>Blockers:</strong> {blockers}</div>' if blockers else ""}
+            {f'<div style="margin-bottom:6px;"><strong>Next Step:</strong> {next_step}</div>' if next_step else ""}
         </div>
 
         <div style="
